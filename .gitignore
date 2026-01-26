@@ -1,0 +1,45 @@
+
+# Dependencies
+node_modules/
+backend/venv/
+.venv/
+env/
+venv/
+
+# Build outputs
+frontend/.next/
+frontend/out/
+backend/dist/
+backend/build/
+
+# IDEs and Tools
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Credentials and sensitive info
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Databases and Local storage
+*.db
+*.sqlite3
+backend.log
+test_output.txt
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Hardware/OS specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
