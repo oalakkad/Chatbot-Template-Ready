@@ -14,3 +14,10 @@ class ChatResponse(BaseModel):
     state: str    # Current conversation state (optional, for debug)
     action: Optional[str] = None # e.g., "takeover", "login_success"
     timestamp: Optional[datetime] = None
+
+class VoiceResponse(BaseModel):
+    transcription: str
+    response_text: str
+    audio_base64: Optional[str] = None
+    state: str
+    timestamp: Optional[datetime] = None

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Body, UploadFile, File, Depends, Header
+from fastapi import FastAPI, HTTPException, Body, UploadFile, File, Depends, Header, Form
 from fastapi.middleware.cors import CORSMiddleware
 from agent_logic import handle_user_message, get_all_sessions, end_session
 from models import ChatRequest, ChatResponse
@@ -9,6 +9,10 @@ from database import engine, get_db
 import models_db
 from sqlalchemy.orm import Session
 from knowledge_base import ingest_pdf
+from voice_utils import transcribe_audio, generate_speech
+import base64
+import io
+import models
 
 app = FastAPI(title="Help Desk AI Backend")
 
@@ -45,6 +49,41 @@ async def chat_endpoint(request: ChatRequest):
     try:
         response_data = await handle_user_message(request)
         return response_data
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/voice", response_model=models.VoiceResponse)
+async def chat_voice_endpoint(
+    session_id: str = Form(...),
+    audio: UploadFile = File(...)
+):
+    try:
+        # 1. Transcribe
+        audio_content = await audio.read()
+        audio_stream = io.BytesIO(audio_content)
+        transcription = await transcribe_audio(audio_stream)
+        
+        if not transcription:
+             raise HTTPException(status_code=400, detail="Could not transcribe audio")
+             
+        # 2. Get AI Response text using the existing handle_user_message logic
+        chat_req = ChatRequest(session_id=session_id, message=transcription)
+        ai_resp = await handle_user_message(chat_req)
+        
+        # 3. Generate TTS for AI Response
+        voice_data = await generate_speech(ai_resp.response)
+        voice_b64 = base64.b64encode(voice_data).decode("utf-8") if voice_data else None
+        
+        from database import get_kuwait_time
+        return models.VoiceResponse(
+            transcription=transcription,
+            response_text=ai_resp.response,
+            audio_base64=voice_b64,
+            state=ai_resp.state,
+            timestamp=get_kuwait_time()
+        )
     except Exception as e:
         import traceback
         traceback.print_exc()

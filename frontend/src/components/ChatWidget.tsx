@@ -5,8 +5,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { Message } from '../types';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
-import { MessageCircle, X, Minimize2, Loader2 } from 'lucide-react';
+import { MessageCircle, X, Minimize2, Loader2, Phone } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import CallingOverlay from './CallingOverlay';
 
 export default function ChatWidget() {
     const [isOpen, setIsOpen] = useState(false);
@@ -14,6 +15,12 @@ export default function ChatWidget() {
     const [isLoading, setIsLoading] = useState(false);
     const sessionIdRef = useRef<string>('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const [isCalling, setIsCalling] = useState(false);
+    const [isListening, setIsListening] = useState(false);
+    const [isSpeaking, setIsSpeaking] = useState(false);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -142,6 +149,91 @@ export default function ChatWidget() {
         }
     };
 
+    const handleVoiceSend = async (audioBlob: Blob) => {
+        setIsLoading(true);
+        if (isCalling) setIsListening(false);
+
+        const formData = new FormData();
+        formData.append('session_id', sessionIdRef.current);
+        formData.append('audio', audioBlob, 'voice_note.wav');
+
+        try {
+            const res = await fetch('http://127.0.0.1:8000/chat/voice', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!res.ok) throw new Error('Voice sync error');
+
+            const data = await res.json();
+
+            // Add user message to UI
+            const userMsg: Message = {
+                id: uuidv4(),
+                text: `🎤 ${data.transcription}`,
+                sender: 'user',
+                timestamp: new Date()
+            };
+            setMessages(prev => [...prev, userMsg]);
+
+            // Add AI message to UI
+            const botMsg: Message = {
+                id: uuidv4(),
+                text: data.response_text,
+                sender: 'ai',
+                timestamp: data.timestamp ? new Date(data.timestamp) : new Date()
+            };
+            setMessages(prev => [...prev, botMsg]);
+
+            // Play AI Voice
+            if (data.audio_base64) {
+                if (isCalling) setIsSpeaking(true);
+                const audio = new Audio(`data:audio/mp3;base64,${data.audio_base64}`);
+                audioRef.current = audio;
+                audio.onended = () => {
+                    setIsSpeaking(false);
+                };
+                await audio.play();
+            }
+        } catch (error) {
+            console.error('Voice Error:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const toggleCallListening = async () => {
+        if (isListening) {
+            if (mediaRecorderRef.current) {
+                mediaRecorderRef.current.stop();
+                setIsListening(false);
+            }
+        } else {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const mediaRecorder = new MediaRecorder(stream);
+                mediaRecorderRef.current = mediaRecorder;
+                audioChunksRef.current = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) audioChunksRef.current.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+                    handleVoiceSend(audioBlob);
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                setIsListening(true);
+            } catch (err) {
+                console.error("Mic error:", err);
+                alert("Microphone access denied or error occurred.");
+            }
+        }
+    };
+
     return (
         <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4 font-sans antialiased">
             <AnimatePresence>
@@ -166,13 +258,36 @@ export default function ChatWidget() {
                                     </p>
                                 </div>
                             </div>
-                            <button
-                                onClick={() => setIsOpen(false)}
-                                className="text-white/80 hover:text-white hover:bg-white/10 p-2 rounded-full transition-colors"
-                            >
-                                <Minimize2 size={18} />
-                            </button>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setIsCalling(true)}
+                                    className="text-white/80 hover:text-white hover:bg-white/10 p-2 rounded-full transition-colors"
+                                    title="Call AI"
+                                >
+                                    <Phone size={18} />
+                                </button>
+                                <button
+                                    onClick={() => setIsOpen(false)}
+                                    className="text-white/80 hover:text-white hover:bg-white/10 p-2 rounded-full transition-colors"
+                                >
+                                    <Minimize2 size={18} />
+                                </button>
+                            </div>
                         </div>
+
+                        {/* Calling UI */}
+                        <CallingOverlay
+                            isOpen={isCalling}
+                            onHangUp={() => {
+                                setIsCalling(false);
+                                if (isListening && mediaRecorderRef.current) mediaRecorderRef.current.stop();
+                                setIsListening(false);
+                            }}
+                            onToggleListening={toggleCallListening}
+                            isListening={isListening}
+                            isSpeaking={isSpeaking}
+                            agentName={isAgentActive ? "Support Agent" : "Help Desk AI"}
+                        />
 
                         {/* Chat Area */}
                         <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50 relative">
@@ -219,7 +334,11 @@ export default function ChatWidget() {
 
                         {/* Input Area */}
                         <div className="p-0 border-t border-gray-100 bg-white">
-                            <ChatInput onSend={sendMessage} disabled={isLoading} />
+                            <ChatInput
+                                onSend={sendMessage}
+                                onVoiceSend={handleVoiceSend}
+                                disabled={isLoading}
+                            />
                         </div>
                     </motion.div>
                 )}

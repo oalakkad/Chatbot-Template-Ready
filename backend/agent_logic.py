@@ -62,11 +62,14 @@ async def handle_user_message(request: ChatRequest) -> ChatResponse:
         response_text = "Welcome to the Enterprise Support Portal! 👋\n\nFor your security, could you please verify your identity by entering your registered phone number?"
     
     elif state == "AWAIT_PHONE":
-        if not msg.isdigit() or len(msg) < 3:
+        # Lenient parsing for voice/messy input: extract only digits
+        clean_msg = "".join(filter(str.isdigit, msg))
+        
+        if not clean_msg or len(clean_msg) < 3:
             response_text = "I couldn't verify that number. Could you double-check it and try again?"
             next_state = "AWAIT_PHONE"
         else:
-            user = get_user_by_phone(msg)
+            user = get_user_by_phone(clean_msg)
             if user:
                 session["data"]["user"] = {
                     "email": user.email, 
