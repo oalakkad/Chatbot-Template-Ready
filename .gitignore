@@ -1,10 +1,10 @@
 
 # Dependencies
-node_modules/
-backend/venv/
-.venv/
-env/
-venv/
+**/node_modules/
+**/venv/
+**/.venv/
+**/env/
+**/__pycache__/
 
 # Build outputs
 frontend/.next/
