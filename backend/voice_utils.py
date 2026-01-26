@@ -21,10 +21,15 @@ async def transcribe_audio(audio_file: BinaryIO) -> str:
         
         transcript = client.audio.transcriptions.create(
             model="whisper-1", 
-            file=audio_file,
             prompt="The user is likely speaking a phone number or a short verification code. Numbers like 12345678."
         )
-        return transcript.text
+        
+        text = transcript.text
+        # Post-processing: Remove spaces between digits (e.g., "5 5 5" -> "555")
+        import re
+        text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
+        
+        return text
     except Exception as e:
         print(f"[VOICE] Transcription Error: {e}")
         return ""

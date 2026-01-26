@@ -170,7 +170,7 @@ export default function ChatWidget() {
             // Add user message to UI
             const userMsg: Message = {
                 id: uuidv4(),
-                text: `🎤 ${data.transcription}`,
+                text: data.transcription,
                 sender: 'user',
                 timestamp: new Date()
             };
@@ -280,7 +280,10 @@ export default function ChatWidget() {
                             isOpen={isCalling}
                             onHangUp={() => {
                                 setIsCalling(false);
-                                if (isListening && mediaRecorderRef.current) mediaRecorderRef.current.stop();
+                                if (isListening && mediaRecorderRef.current) {
+                                    mediaRecorderRef.current.onstop = null; // Prevent sending
+                                    mediaRecorderRef.current.stop();
+                                }
                                 setIsListening(false);
                             }}
                             onToggleListening={toggleCallListening}
