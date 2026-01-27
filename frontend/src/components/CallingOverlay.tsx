@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PhoneOff, Mic, MicOff, Volume2 } from 'lucide-react';
+import { PhoneOff, Mic, MicOff, Volume2, Loader2 } from 'lucide-react';
 
 interface CallingOverlayProps {
     isOpen: boolean;
@@ -9,6 +9,7 @@ interface CallingOverlayProps {
     onToggleMute: () => void;
     isListening: boolean;
     isSpeaking: boolean;
+    isProcessing?: boolean;
     isMuted: boolean;
     agentName: string;
 }
@@ -20,6 +21,7 @@ const CallingOverlay: React.FC<CallingOverlayProps> = ({
     onToggleMute,
     isListening,
     isSpeaking,
+    isProcessing,
     isMuted,
     agentName
 }) => {
@@ -37,8 +39,10 @@ const CallingOverlay: React.FC<CallingOverlayProps> = ({
                         <div className="text-blue-400 text-xs uppercase tracking-widest mb-2 font-bold">Encrypted AI Call</div>
                         <h2 className="text-2xl font-bold">{agentName}</h2>
                         <div className="flex items-center justify-center gap-2 mt-2">
-                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                            <span className="text-slate-400 text-sm">{isSpeaking ? 'Speaking...' : isListening ? 'Listening...' : 'Connected'}</span>
+                            <span className={`w-2 h-2 rounded-full ${isProcessing ? 'bg-amber-500' : 'bg-blue-500'} animate-pulse`} />
+                            <span className="text-slate-400 text-sm">
+                                {isSpeaking ? 'Speaking...' : isProcessing ? 'Processing...' : isListening ? 'Listening...' : 'Connected'}
+                            </span>
                         </div>
                     </div>
 
@@ -66,11 +70,13 @@ const CallingOverlay: React.FC<CallingOverlayProps> = ({
 
                         <button
                             onClick={onToggleListening}
-                            disabled={isSpeaking}
-                            className={`w-32 h-32 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-700 flex items-center justify-center shadow-2xl shadow-blue-500/20 relative z-10 border-4 border-slate-800 transition-transform active:scale-95 ${isListening ? 'ring-4 ring-blue-500/50' : ''}`}
+                            disabled={isSpeaking || isProcessing}
+                            className={`w-32 h-32 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-700 flex items-center justify-center shadow-2xl shadow-blue-500/20 relative z-10 border-4 border-slate-800 transition-transform active:scale-95 ${isListening ? 'ring-4 ring-blue-500/50' : ''} ${(isSpeaking || isProcessing) ? 'opacity-80 cursor-not-allowed' : ''}`}
                         >
                             {isSpeaking ? (
                                 <Volume2 size={48} className="text-white animate-bounce" />
+                            ) : isProcessing ? (
+                                <Loader2 size={48} className="text-white animate-spin text-blue-200" />
                             ) : (
                                 <Mic size={48} className={isListening ? "text-white scale-110" : "text-blue-100 opacity-50"} />
                             )}

@@ -1,26 +1,105 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+    --background: #ffffff;
+    --foreground: #171717;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --font-sans: var(--font-geist-sans);
+    --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+    :root {
+        --background: #0a0a0a;
+        --foreground: #ededed;
+    }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Premium Markdown Styles */
+.prose {
+    color: #e2e8f0;
+    line-height: 1.7;
+}
+
+.prose h3 {
+    color: #38bdf8;
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-top: 1.25rem;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+    padding-bottom: 0.25rem;
+}
+
+.prose ul {
+    margin: 1rem 0;
+    padding-left: 1.25rem;
+    list-style: none;
+}
+
+.prose ul li {
+    position: relative;
+    margin-bottom: 0.75rem;
+}
+
+.prose ul li::before {
+    content: "◆";
+    position: absolute;
+    left: -1.25rem;
+    color: #38bdf8;
+    font-size: 0.7rem;
+    top: 0.2rem;
+}
+
+.prose table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 1.5rem 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(15, 23, 42, 0.5);
+}
+
+.prose th {
+    background: rgba(30, 41, 59, 0.8);
+    color: #38bdf8;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.prose td {
+    padding: 0.75rem 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.9rem;
+}
+
+.prose tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.prose hr {
+    margin: 1.5rem 0;
+    border: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.prose strong {
+    color: #7dd3fc;
+    font-weight: 600;
 }

@@ -75,14 +75,25 @@ export default function ChatWidget() {
                     }
 
                     if (data.has_new && data.messages.length > 0) {
-                        data.messages.forEach((m: any) => {
-                            const newMsg: Message = {
-                                id: uuidv4(),
-                                text: m.text,
-                                sender: m.sender === 'admin' ? 'ai' : m.sender,
-                                timestamp: m.timestamp ? new Date(m.timestamp) : new Date()
-                            };
-                            setMessages(prev => [...prev, newMsg]);
+                        setMessages(prev => {
+                            let newPrev = [...prev];
+                            data.messages.forEach((m: any) => {
+                                // De-duplicate: If an AI message matches or is a subset of what we already have, skip it.
+                                const isDup = (m.sender === 'ai' || m.sender === 'admin') && newPrev.some(em =>
+                                    em.sender === 'ai' &&
+                                    em.text.length > 0 &&
+                                    (m.text.trim() === em.text.trim() || m.text.includes(em.text.trim()) || em.text.includes(m.text.trim()))
+                                );
+                                if (!isDup) {
+                                    newPrev.push({
+                                        id: uuidv4(),
+                                        text: m.text,
+                                        sender: m.sender === 'admin' ? 'ai' : m.sender,
+                                        timestamp: m.timestamp ? new Date(m.timestamp) : new Date()
+                                    });
+                                }
+                            });
+                            return newPrev;
                         });
                     }
                 }
@@ -122,8 +133,12 @@ export default function ChatWidget() {
 
         setIsLoading(true);
 
+        // Prepare bot message placeholder
+        const botMessageId = uuidv4();
+        let fullBotText = "";
+
         try {
-            const response = await fetch('http://127.0.0.1:8000/chat', {
+            const response = await fetch('http://127.0.0.1:8000/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -132,21 +147,47 @@ export default function ChatWidget() {
                 }),
             });
 
-            if (!response.ok) throw new Error('Network response was not ok');
+            if (!response.ok) throw new Error('Stream request failed');
 
-            const data = await response.json();
+            // Handle non-streaming fallback or error from server
+            if (!response.body) throw new Error('No response body');
 
-            if (data.response) {
-                const botMessage: Message = {
-                    id: uuidv4(),
-                    text: data.response,
-                    sender: 'ai',
-                    timestamp: data.timestamp ? new Date(data.timestamp) : new Date(),
-                };
-                setMessages(prev => [...prev, botMessage]);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            // Add initial empty bot message with streaming flag
+            setMessages(prev => [...prev, {
+                id: botMessageId,
+                text: "",
+                sender: 'ai',
+                timestamp: new Date(),
+                isStreaming: true
+            }]);
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                fullBotText += chunk;
+
+                // Update the bot message in real-time
+                setMessages(prev => prev.map(m =>
+                    m.id === botMessageId ? { ...m, text: fullBotText } : m
+                ));
             }
+
+            // Once done, remove streaming flag and mark as streamed to avoid typewriter re-run
+            setMessages(prev => prev.map(m =>
+                m.id === botMessageId ? { ...m, isStreaming: false, wasStreamed: true } : m
+            ));
+
         } catch (error) {
-            console.error('Error:', error);
+            console.error('Streaming Error:', error);
+            // Fallback for errors
+            setMessages(prev => prev.map(m =>
+                m.id === botMessageId ? { ...m, text: "I'm having trouble connecting right now. Please try again." } : m
+            ));
         } finally {
             setIsLoading(false);
         }
@@ -381,6 +422,7 @@ export default function ChatWidget() {
                             onToggleMute={() => setIsMuted(!isMuted)}
                             isListening={isListening}
                             isSpeaking={isSpeaking}
+                            isProcessing={isLoading}
                             isMuted={isMuted}
                             agentName={isAgentActive ? "Support Agent" : "Help Desk AI"}
                         />
@@ -401,14 +443,6 @@ export default function ChatWidget() {
                                 />
                             ))}
 
-                            {isLoading && (
-                                <div className="flex justify-start mb-4">
-                                    <div className="bg-slate-800 px-4 py-3 rounded-2xl rounded-bl-none shadow-md border border-slate-700/50 flex items-center gap-2">
-                                        <Loader2 className="w-4 h-4 text-sky-400 animate-spin" />
-                                        <span className="text-xs text-slate-400">Thinking...</span>
-                                    </div>
-                                </div>
-                            )}
                             <div ref={messagesEndRef} />
                         </div>
 

@@ -3,4 +3,6 @@ export interface Message {
     text: string;
     sender: 'user' | 'ai';
     timestamp: Date;
+    isStreaming?: boolean;
+    wasStreamed?: boolean;
 }

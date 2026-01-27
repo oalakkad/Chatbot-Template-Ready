@@ -21,7 +21,8 @@ async def transcribe_audio(audio_file: BinaryIO) -> str:
         
         transcript = client.audio.transcriptions.create(
             file=audio_file,
-            model="whisper-1"
+            model="whisper-1",
+            prompt="This is a support call for AL-TIJARIA. The user might speak in English or Kuwaiti Arabic."
         )
         
         return transcript.text

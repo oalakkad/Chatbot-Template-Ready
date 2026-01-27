@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Body, UploadFile, File, Depends, Header, Form
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from agent_logic import handle_user_message, get_all_sessions, end_session
+from agent_logic import handle_user_message, handle_user_message_stream, get_all_sessions, end_session
 from models import ChatRequest, ChatResponse
 from utils import get_all_users, save_message, get_chat_history, get_unread_messages, mark_messages_read, get_active_sessions, create_user, is_session_ended, get_db_session
 from pydantic import BaseModel
@@ -55,6 +56,20 @@ async def chat_endpoint(request: ChatRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/chat/stream")
+async def chat_stream_endpoint(request: ChatRequest):
+    """
+    Experimental Streaming Endpoint for Super-Sonic responses.
+    """
+    try:
+        return StreamingResponse(
+            handle_user_message_stream(request),
+            media_type="text/event-stream"
+        )
+    except Exception as e:
+        print(f"[STREAM_API_ERR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/chat/voice", response_model=models.VoiceResponse)
 async def chat_voice_endpoint(
     session_id: str = Form(...),
@@ -73,8 +88,14 @@ async def chat_voice_endpoint(
         chat_req = ChatRequest(session_id=session_id, message=transcription)
         ai_resp = await handle_user_message(chat_req)
         
-        # 3. Generate TTS for AI Response
-        voice_data = await generate_speech(ai_resp.response)
+        # 3. Generate TTS for AI Response (Cleaned for voice naturalness)
+        import re
+        # Remove [Source | Page] citations for voice only
+        clean_voice_text = re.sub(r'\[.*?\|.*?\]', '', ai_resp.response)
+        # Remove extra asterisks/markdown that sound weird in voice
+        clean_voice_text = clean_voice_text.replace("**", "").replace("#", "")
+        
+        voice_data = await generate_speech(clean_voice_text)
         voice_b64 = base64.b64encode(voice_data).decode("utf-8") if voice_data else None
         
         from database import get_kuwait_time

@@ -11,7 +11,9 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 # CREDENTIALS (In real app, use env vars)
 PINECONE_API_KEY = "pcsk_6gZ8KC_E34T5B3vMGXbpFCD6QNM4ENqGJTq5L9kVZZNrjkEvfSQZ7z2p9ZTZkYUcC6P7mr"
@@ -23,6 +25,10 @@ OPENAI_API_KEY = "sk-proj-IbSsgE-eBG3YzNhgdwPsZZW3MoVa7x60dNj7LrQwVi2LwIzxXbhVIW
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(name=PINECONE_INDEX_NAME, host=PINECONE_HOST)
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
+async_openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+# Executor for sync operations like embeddings
+executor = ThreadPoolExecutor(max_workers=10)
 
 # Initialize Embeddings (Local, Free)
 # Using distiluse-base-multilingual-cased-v1 (512 dimensions) to match Pinecone Index
@@ -111,36 +117,81 @@ def ingest_pdf(file: UploadFile, db: Session):
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-def search_pinecone(query: str, top_k: int = 5) -> str:
+async def search_pinecone(query: str, top_k: int = 20) -> str:
     """
-    Embeds query, searches Pinecone, returns formatted context string.
-    Increased top_k to 5 for better accuracy.
+    Super-Sonic Divine Precision Search:
+    - Async & Parallelized for maximum speed.
+    - Explicit Typo Correction.
+    - 5x Query Expansion + Parallel Retrieval.
     """
     try:
-        print(f"[RAG] Searching for: {query}")
-        query_vector = embeddings.embed_query(query)
+        # 1. Async Multi-Query Expansion with Typo Correction
+        queries = await generate_multi_queries(query)
         
-        results = index.query(
-            vector=query_vector,
-            top_k=top_k,
-            include_metadata=True
-        )
+        # 2. Parallel Embeddings & Pinecone Retrieval
+        async def fetch_results(q):
+            # Embeddings is sync/local, wrap in thread
+            qv = await asyncio.get_event_loop().run_in_executor(executor, lambda: embeddings.embed_query(q))
+            # Pinecone query is sync, wrap in thread
+            res = await asyncio.get_event_loop().run_in_executor(executor, lambda: index.query(vector=qv, top_k=30, include_metadata=True))
+            return res.matches
+
+        # Parallelize all searches
+        tasks = [fetch_results(q) for q in queries]
+        all_results_lists = await asyncio.gather(*tasks)
         
-        if not results.matches:
+        all_matches = []
+        seen_ids = set()
+        for matches in all_results_lists:
+            for m in matches:
+                if m.id not in seen_ids:
+                    all_matches.append(m)
+                    seen_ids.add(m.id)
+
+        if not all_matches:
             return ""
-            
+
+        # Rapid Score-Based Selection
+        all_matches.sort(key=lambda x: x.score, reverse=True)
+        best_chunks = all_matches[:top_k]
+        
         context_parts = []
-        for match in results.matches:
+        for match in best_chunks:
             text = match.metadata.get("text", "")
             source = match.metadata.get("source", "Unknown")
-            score = match.score
-            if score > 0.25:  # Lowered threshold for more results
-                context_parts.append(f"[Source: {source}]\n{text}")
+            page = match.metadata.get("page", "?")
+            context_parts.append(f"[Source: {source} | Page: {page}]\n{text}")
         
         return "\n\n---\n\n".join(context_parts)
     except Exception as e:
-        print(f"[RAG] Search Error: {e}")
+        print(f"[SUPER_SONIC] Search Error: {e}")
         return ""
+
+async def generate_multi_queries(query: str) -> List[str]:
+    """Generates 5 version of the query with internal typo-correction."""
+    try:
+        resp = await async_openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": """You are an elite search engineer. 
+1. CORRECT any typos in the user's request (e.g. 'policeis' -> 'policies').
+2. Generate 4 additional, distinct search queries starting with the corrected query.
+3. Return as a clean list separated by newlines."""},
+                {"role": "user", "content": f"User Request: {query}"}
+            ],
+            temperature=0,
+            timeout=5
+        )
+        variants = resp.choices[0].message.content.strip().split("\n")
+        return [query] + [v.strip("- ").strip() for v in variants[:4]]
+    except Exception as e:
+        print(f"[QUERY_EXPANSION_ERROR] {e}")
+        return [query]
+
+def rerank_chunks(query: str, chunks: list, limit: int = 20) -> list:
+    """Fast score-based selection."""
+    chunks.sort(key=lambda x: x.score, reverse=True)
+    return chunks[:limit]
 
 def delete_document_vectors(filename: str):
     """
@@ -156,45 +207,50 @@ def delete_document_vectors(filename: str):
         print(f"[RAG] Delete Error: {e}")
         raise e
 
-def generate_answer(query: str, context: str) -> str:
+async def generate_answer_stream(query: str, context: str, history: list = None):
     """
-    Uses OpenAI to generate a polite, accurate answer based on provided context.
-    Optimized for speed and accuracy.
+    Yields chunks of the AI's response for real-time streaming.
+    - Merged validation rules.
+    - Elite markdown formatting.
     """
     if not context:
-        return "I'm sorry, I couldn't find any information about that in our knowledge base."
+        yield "Information not available in current records. Please try asking in a different way or check your spelling."
+        return
+
+    llm_messages = [
+        {"role": "system", "content": """YOU ARE THE AL-TIJARIA 'ELDORADO' AI. 
+DESIGN PHILOSOPHY: PREMIUM, HIGH-FIDELITY, ELITE.
+
+STRICT CONSTRAINTS:
+1. MATCH LANGUAGE: Detect the user's language and respond EXCLUSIVELY in that language.
+2. NO CHATGPT-STYLE FILLER: No 'Sure', 'How can I help?', or 'Based on the context'. 
+3. GOD-TIER LAYOUTING:
+   - Use `###` for bold, capitalized headers.
+   - Use Markdown Tables `| Header |` for any itemized data or multi-point comparisons.
+   - For lists, use diamond bullets `- ◆` or clean bold numbering `1.`
+   - Ensure spaciousness between sections.
+   - Use `---` for clean dividers between sources.
+4. CITATIONS: Use `[Source Name | Page #]` after every key point.
+
+TONE: Clinical, Elite, Authoritative Assistant."""}
+    ]
+
+    if history:
+        for h in history[-3:]:
+             llm_messages.append({"role": "user" if h.sender == "user" else "assistant", "content": h.content})
+
+    llm_messages.append({"role": "user", "content": f"CONTEXT: {context}\n\nQUERY: {query}"})
 
     try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",  # Fast and cost-effective
-            messages=[
-                {"role": "system", "content": """You are AL-TIJARIA Support Assistant - a professional, helpful AI assistant.
-
-CRITICAL LANGUAGE RULE:
-- If the user asks in ENGLISH → Answer in ENGLISH
-- If the user asks in ARABIC → Answer in KUWAITI ARABIC (الكويتية)
-- ALWAYS match the exact language of the question
-
-OTHER RULES:
-1. STRICTLY answer ONLY using the provided context below
-2. If information is NOT in the context, say: 'I don't have that specific information in my knowledge base' (or in Arabic: 'ما عندي هالمعلومة بقاعدة البيانات حقتي')
-3. Be concise but complete - provide all relevant details from the context
-4. Format your response clearly with bullet points or paragraphs as needed
-5. Never make up information or use external knowledge
-6. Quote specific details from the context when helpful"""},
-                {"role": "user", "content": f"""CONTEXT FROM KNOWLEDGE BASE:
-{context}
-
----
-
-USER QUESTION: {query}
-
-Provide a clear, accurate answer based ONLY on the context above."""}
-            ],
-            temperature=0.3,  # Lower temperature for more consistent, accurate answers
-            max_tokens=500  # Limit response length for speed
+        response = await async_openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=llm_messages,
+            temperature=0,
+            stream=True
         )
-        return response.choices[0].message.content
+        async for chunk in response:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
     except Exception as e:
-        print(f"[LLM] Error: {e}")
-        return "I'm having trouble thinking right now. Please try again or ask for a human agent."
+        print(f"[STREAM_ERR] {e}")
+        yield "Error during generation."

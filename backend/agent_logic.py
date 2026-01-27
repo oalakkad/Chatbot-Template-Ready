@@ -204,12 +204,14 @@ async def handle_user_message(request: ChatRequest) -> ChatResponse:
 
     # --- AUTHENTICATED Q&A ---
     elif state == "AUTHENTICATED":
-        answer = search_knowledge_base(msg)
+        from utils import get_chat_history
+        history = get_chat_history(session_id)
+        answer = await search_knowledge_base(msg, history=history)
         if answer:
             response_text = answer
             next_state = "AUTHENTICATED"
         else:
-            response_text = "I searched our knowledge base but couldn't find an exact match. would you like to open a support ticket instead?"
+            response_text = "I've searched our knowledge base but couldn't find a definitive answer for you. Would you like to speak with a human agent or have me open a support ticket for you?"
             next_state = "AUTHENTICATED"
     
     else:
@@ -242,3 +244,35 @@ def end_session(session_id: str):
     except Exception as e:
         print(f"[ERROR] Failed to persist ENDED status for {session_id}: {e}")
         return in_memory # Return True if at least memory was updated
+async def handle_user_message_stream(request: ChatRequest):
+    """
+    Async Generator for streaming responses.
+    """
+    session_id = request.session_id
+    msg = request.message.strip()
+    
+    if session_id not in SESSIONS:
+        SESSIONS[session_id] = {"state": "INIT", "data": {}}
+        persist_chat_session(session_id, status="ACTIVE")
+    
+    session = SESSIONS[session_id]
+    state = session["state"]
+
+    # --- FOR STREAMING, WE PRIMARILY CARE ABOUT AUTHENTICATED Q&A ---
+    if state == "AUTHENTICATED":
+        from utils import get_chat_history, search_knowledge_base_stream
+        history = get_chat_history(session_id)
+        
+        full_response = ""
+        async for chunk in search_knowledge_base_stream(msg, history=history):
+            full_response += chunk
+            yield chunk
+            
+        # After stream finishes, save to DB and mark as read (since user just saw it stream)
+        if full_response:
+             save_message(session_id, "ai", full_response, read_by_user=True)
+        return
+
+    # --- FOR OTHER STATES (Auth, etc.), just yield the single response ---
+    resp = await handle_user_message(request)
+    yield resp.response

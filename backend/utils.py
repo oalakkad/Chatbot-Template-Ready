@@ -130,21 +130,31 @@ def get_active_sessions():
     finally:
         db.close()
 
-from knowledge_base import search_pinecone, generate_answer
+from knowledge_base import search_pinecone, generate_answer_stream
 
-def search_knowledge_base(query: str):
-    # 1. Retrieve Context from Pinecone
-    context = search_pinecone(query)
+async def search_knowledge_base(query: str, history: list = None):
+    # Backward compatibility: Join the stream into a single string
+    full_answer = ""
+    async for chunk in search_knowledge_base_stream(query, history):
+        full_answer += chunk
+    return full_answer
+
+async def search_knowledge_base_stream(query: str, history: list = None):
+    # 1. Retrieve Context from Pinecone (Async & Parallel)
+    context = await search_pinecone(query)
     
-    # 2. Generate Intelligent Answer via OpenAI
+    # 2. Yield chunks from the generator
     if context:
-        return generate_answer(query, context)
-    
-    # Fallback to existing static responses if RAG finds nothing
+        async for chunk in generate_answer_stream(query, context, history=history):
+            yield chunk
+        return
+
+    # 3. Static Fallbacks (If RAG found nothing)
     query_lower = query.lower()
     if "holiday" in query_lower:
-        return "Company holidays are listed in the HR portal. We have 12 public holidays per year."
-    return None
+        yield "Company holidays are listed in the HR portal. We have 12 public holidays per year."
+    else:
+        yield "Information not available in current records. Please verify your spelling (e.g. 'policies')."
 
 from models_db import ChatSession
 def persist_chat_session(session_id: str, user_id: int = None, guest_name: str = None, guest_dept: str = None, status: str = "ACTIVE"):
