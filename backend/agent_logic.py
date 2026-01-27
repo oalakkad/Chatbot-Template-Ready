@@ -59,7 +59,7 @@ async def handle_user_message(request: ChatRequest) -> ChatResponse:
 
     if state == "INIT":
         next_state = "AWAIT_PHONE"
-        response_text = "Welcome to the Enterprise Support Portal! 👋\n\nFor your security, could you please verify your identity by entering your registered phone number?"
+        response_text = "Welcome to the AL-TIJARIA Support Portal! 👋\n\nFor your security, could you please verify your identity by entering your registered phone number?"
     
     elif state == "AWAIT_PHONE":
         # Lenient parsing for voice/messy input: extract only digits

@@ -111,9 +111,10 @@ def ingest_pdf(file: UploadFile, db: Session):
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-def search_pinecone(query: str, top_k: int = 3) -> str:
+def search_pinecone(query: str, top_k: int = 5) -> str:
     """
     Embeds query, searches Pinecone, returns formatted context string.
+    Increased top_k to 5 for better accuracy.
     """
     try:
         print(f"[RAG] Searching for: {query}")
@@ -133,10 +134,10 @@ def search_pinecone(query: str, top_k: int = 3) -> str:
             text = match.metadata.get("text", "")
             source = match.metadata.get("source", "Unknown")
             score = match.score
-            if score > 0.3: # Filter weak matches
-                context_parts.append(f"Source ({source}): {text}")
+            if score > 0.25:  # Lowered threshold for more results
+                context_parts.append(f"[Source: {source}]\n{text}")
         
-        return "\n\n".join(context_parts)
+        return "\n\n---\n\n".join(context_parts)
     except Exception as e:
         print(f"[RAG] Search Error: {e}")
         return ""
@@ -158,18 +159,40 @@ def delete_document_vectors(filename: str):
 def generate_answer(query: str, context: str) -> str:
     """
     Uses OpenAI to generate a polite, accurate answer based on provided context.
+    Optimized for speed and accuracy.
     """
     if not context:
         return "I'm sorry, I couldn't find any information about that in our knowledge base."
 
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini", # Cost effective & powerful
+            model="gpt-4o-mini",  # Fast and cost-effective
             messages=[
-                {"role": "system", "content": "You are a helpful Enterprise Support Assistant. Use the provided context to answer the user's question accurately. If the answer is not in the context, say you don't know politely. Stay professional."},
-                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
+                {"role": "system", "content": """You are AL-TIJARIA Support Assistant - a professional, helpful AI assistant.
+
+CRITICAL LANGUAGE RULE:
+- If the user asks in ENGLISH → Answer in ENGLISH
+- If the user asks in ARABIC → Answer in KUWAITI ARABIC (الكويتية)
+- ALWAYS match the exact language of the question
+
+OTHER RULES:
+1. STRICTLY answer ONLY using the provided context below
+2. If information is NOT in the context, say: 'I don't have that specific information in my knowledge base' (or in Arabic: 'ما عندي هالمعلومة بقاعدة البيانات حقتي')
+3. Be concise but complete - provide all relevant details from the context
+4. Format your response clearly with bullet points or paragraphs as needed
+5. Never make up information or use external knowledge
+6. Quote specific details from the context when helpful"""},
+                {"role": "user", "content": f"""CONTEXT FROM KNOWLEDGE BASE:
+{context}
+
+---
+
+USER QUESTION: {query}
+
+Provide a clear, accurate answer based ONLY on the context above."""}
             ],
-            temperature=0.7
+            temperature=0.3,  # Lower temperature for more consistent, accurate answers
+            max_tokens=500  # Limit response length for speed
         )
         return response.choices[0].message.content
     except Exception as e:

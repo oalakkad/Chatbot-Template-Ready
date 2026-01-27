@@ -6,8 +6,10 @@ interface CallingOverlayProps {
     isOpen: boolean;
     onHangUp: () => void;
     onToggleListening: () => void;
+    onToggleMute: () => void;
     isListening: boolean;
     isSpeaking: boolean;
+    isMuted: boolean;
     agentName: string;
 }
 
@@ -15,8 +17,10 @@ const CallingOverlay: React.FC<CallingOverlayProps> = ({
     isOpen,
     onHangUp,
     onToggleListening,
+    onToggleMute,
     isListening,
     isSpeaking,
+    isMuted,
     agentName
 }) => {
     return (
@@ -75,8 +79,12 @@ const CallingOverlay: React.FC<CallingOverlayProps> = ({
 
                     {/* Controls */}
                     <div className="mb-8 flex gap-6 items-center">
-                        <button className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:bg-slate-700 transition-colors">
-                            <MicOff size={20} />
+                        <button
+                            onClick={onToggleMute}
+                            className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${isMuted ? 'bg-red-500/20 text-red-400 ring-2 ring-red-500/50' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                            title={isMuted ? "Unmute Speaker" : "Mute Speaker"}
+                        >
+                            {isMuted ? <MicOff size={20} /> : <Volume2 size={20} />}
                         </button>
 
                         <button
@@ -84,10 +92,6 @@ const CallingOverlay: React.FC<CallingOverlayProps> = ({
                             className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center text-white hover:bg-red-600 transition-all shadow-xl shadow-red-500/30 active:scale-95"
                         >
                             <PhoneOff size={28} />
-                        </button>
-
-                        <button className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:bg-slate-700 transition-colors">
-                            <Volume2 size={20} />
                         </button>
                     </div>
                 </motion.div>

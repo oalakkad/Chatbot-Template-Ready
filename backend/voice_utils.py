@@ -20,16 +20,11 @@ async def transcribe_audio(audio_file: BinaryIO) -> str:
         audio_file.name = "audio.wav"
         
         transcript = client.audio.transcriptions.create(
-            model="whisper-1", 
-            prompt="The user is likely speaking a phone number or a short verification code. Numbers like 12345678."
+            file=audio_file,
+            model="whisper-1"
         )
         
-        text = transcript.text
-        # Post-processing: Remove spaces between digits (e.g., "5 5 5" -> "555")
-        import re
-        text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
-        
-        return text
+        return transcript.text
     except Exception as e:
         print(f"[VOICE] Transcription Error: {e}")
         return ""
@@ -43,8 +38,9 @@ async def generate_speech(text: str) -> bytes:
     try:
         response = client.audio.speech.create(
             model="tts-1",
-            voice="alloy", # Options: alloy, echo, fable, onyx, nova, shimmer
-            input=text
+            voice="nova",  # Nova is faster and clearer
+            input=text,
+            speed=1.25  # 25% faster playback
         )
         return response.read()
     except Exception as e:

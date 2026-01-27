@@ -48,7 +48,8 @@ export default function AdminPage() {
 
     // Knowledge Base Upload State
     const [showUploadModal, setShowUploadModal] = useState(false);
-    const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+    const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
+    const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
 
 
     const [searchQuery, setSearchQuery] = useState('');
@@ -81,37 +82,64 @@ export default function AdminPage() {
     };
 
     const handleUploadConfirm = async () => {
-        if (!fileToUpload || processing) return;
+        if (filesToUpload.length === 0 || processing) return;
 
         setProcessing(true);
-        const formData = new FormData();
-        formData.append('file', fileToUpload);
+        setUploadProgress({ current: 0, total: filesToUpload.length });
 
-        try {
-            const res = await fetch('http://127.0.0.1:8000/admin/knowledge/upload', {
-                method: 'POST',
-                body: formData,
-            });
-            if (res.ok) {
-                showToast("Document uploaded and indexing started!", "success");
-                setShowUploadModal(false);
-                setFileToUpload(null);
-                fetchDocuments();
-            } else {
-                const err = await res.json();
-                showToast("Upload Failed: " + err.detail, "error");
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i = 0; i < filesToUpload.length; i++) {
+            setUploadProgress(prev => ({ ...prev, current: i + 1 }));
+            const file = filesToUpload[i];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('http://127.0.0.1:8000/admin/knowledge/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                if (res.ok) {
+                    successCount++;
+                } else {
+                    failCount++;
+                    console.error(`Failed to upload ${file.name}`);
+                }
+            } catch (err) {
+                console.error(err);
+                failCount++;
             }
-        } catch (err) {
-            console.error(err);
-            showToast("Network Error", "error");
-        } finally {
-            setProcessing(false);
+        }
+
+        setProcessing(false);
+        setFilesToUpload([]);
+        setShowUploadModal(false);
+        fetchDocuments();
+
+        if (failCount === 0) {
+            showToast(`Successfully uploaded ${successCount} documents!`, "success");
+        } else {
+            showToast(`Uploaded ${successCount} files. ${failCount} failed.`, "error");
         }
     };
 
 
     useEffect(() => {
         audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); // Simple ping sound
+
+        // Restore session
+        const storedToken = localStorage.getItem('adminToken');
+        const storedUser = localStorage.getItem('adminInfo');
+        if (storedToken) setToken(storedToken);
+        if (storedUser) {
+            try {
+                setAdminInfo(JSON.parse(storedUser));
+            } catch (e) {
+                console.error("Failed to parse admin info", e);
+            }
+        }
     }, []);
 
     // --- AUTHENTICATION ---
@@ -403,10 +431,15 @@ export default function AdminPage() {
 
                 <div className="relative w-full max-w-md p-8 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl">
                     <div className="text-center mb-10">
-                        <div className="mx-auto w-16 h-16 bg-gradient-to-tr from-blue-500 to-violet-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4">
-                            <Shield className="w-8 h-8 text-white" />
+                        <div className="mx-auto w-24 h-24 bg-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4 overflow-hidden p-2">
+                            {/* Placeholder for Al-Tijaria Logo - using a high-quality text representation or image if available */}
+                            <img
+                                src="/logo.jpg"
+                                alt="Al-Tijaria Logo"
+                                className="w-full h-full object-contain"
+                            />
                         </div>
-                        <h1 className="text-2xl font-bold tracking-tight">Admin Portal</h1>
+                        <h1 className="text-2xl font-bold tracking-tight">AL-TIJARIA Admin</h1>
                         <p className="text-slate-400 text-sm mt-2">Enter your credentials to access the secure dashboard.</p>
                     </div>
 
@@ -449,10 +482,14 @@ export default function AdminPage() {
             {/* Sidebar */}
             <aside className="w-64 bg-slate-900/50 border-r border-white/5 flex flex-col backdrop-blur-xl z-10">
                 <div className="p-6 flex items-center gap-3 border-b border-white/5">
-                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                        <Shield className="w-5 h-5 text-white" />
+                    <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden p-1 shadow-lg shadow-blue-500/20">
+                        <img
+                            src="/logo.jpg"
+                            alt="Logo"
+                            className="w-full h-full object-contain"
+                        />
                     </div>
-                    <span className="font-bold text-lg tracking-tight text-white">HelpDesk</span>
+                    <span className="font-bold text-lg tracking-tight text-white">AL-TIJARIA Admin</span>
                 </div>
 
                 <nav className="space-y-4">
@@ -554,7 +591,30 @@ export default function AdminPage() {
 
                                 <div className="space-y-3">
                                     <button
-                                        onClick={() => {
+                                        onClick={async () => {
+                                            // 1. Auto-greet logic FIRST
+                                            const agentName = adminInfo?.name || 'Support Agent';
+                                            console.log("[DEBUG] Accepting chat. Agent:", agentName, "Session:", incomingSession.session_id);
+                                            const greeting = `Hello, I am ${agentName} from AL-TIJARIA. How can I help you today?`;
+
+                                            try {
+                                                const res = await fetch('http://127.0.0.1:8000/admin/reply', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({
+                                                        session_id: incomingSession.session_id,
+                                                        message: greeting,
+                                                        agent_name: agentName
+                                                    })
+                                                });
+                                                const data = await res.json();
+                                                console.log("[DEBUG] Greeting sent response:", data);
+                                            } catch (err) {
+                                                console.error("[DEBUG] Failed to send auto-greeting", err);
+                                            }
+
+                                            // 2. THEN open the view (triggers history fetch)
+                                            console.log("[DEBUG] Switching view to live...");
                                             setSelectedSession(incomingSession.session_id);
                                             setView('live');
                                             setIncomingSession(null);
@@ -575,7 +635,7 @@ export default function AdminPage() {
                     </div>
                 )}
 
-                <div className="flex-1 overflow-hidden p-6 relative z-0">
+                <div className="flex-1 overflow-y-auto p-6 relative z-0">
 
                     {/* USERS VIEW */}
                     {view === 'users' && (
@@ -737,7 +797,33 @@ export default function AdminPage() {
                                         </div>
 
                                         {/* Input */}
-                                        <form onSubmit={sendReply} className="p-4 border-t border-white/5 bg-white/[0.02] flex gap-3">
+                                        <form onSubmit={async (e) => {
+                                            e.preventDefault();
+                                            if (!replyText.trim() || !selectedSession) return;
+
+                                            try {
+                                                const agentName = adminInfo?.name || 'Support Agent';
+                                                await fetch('http://127.0.0.1:8000/admin/reply', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({
+                                                        session_id: selectedSession,
+                                                        message: replyText,
+                                                        agent_name: agentName
+                                                    })
+                                                });
+                                                setReplyText('');
+                                                // Optimistic update
+                                                const newMsg = {
+                                                    sender: 'admin',
+                                                    text: replyText,
+                                                    timestamp: new Date().toISOString()
+                                                };
+                                                setChatHistory(prev => [...prev, newMsg]);
+                                            } catch (err) {
+                                                console.error(err);
+                                            }
+                                        }} className="p-4 border-t border-white/5 bg-white/[0.02] flex gap-3">
                                             <input
                                                 className="flex-1 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/50 transition-colors placeholder-slate-600"
                                                 placeholder="Type your reply here..."
@@ -853,25 +939,34 @@ export default function AdminPage() {
                             </div>
 
                             {/* UPLOAD CONFIRMATION MODAL */}
-                            {showUploadModal && fileToUpload && (
+                            {showUploadModal && filesToUpload.length > 0 && (
                                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
                                     <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl animate-fade-in">
                                         <div className="flex items-center gap-4 mb-4 text-blue-400">
                                             <div className="p-3 bg-blue-500/20 rounded-full">
                                                 <Upload size={24} />
                                             </div>
-                                            <h3 className="text-xl font-bold text-white">Confirm Upload</h3>
+                                            <h3 className="text-xl font-bold text-white">Confirm Batch Upload</h3>
                                         </div>
 
                                         <div className="space-y-4 mb-8">
-                                            <div className="p-4 bg-slate-800 rounded-xl border border-slate-700">
-                                                <p className="text-sm text-slate-400 mb-1">File Name</p>
-                                                <p className="font-mono text-white truncate">{fileToUpload.name}</p>
+                                            <div className="p-4 bg-slate-800 rounded-xl border border-slate-700 max-h-48 overflow-y-auto">
+                                                <p className="text-sm text-slate-400 mb-2 sticky top-0 bg-slate-800 pb-2 border-b border-slate-700">
+                                                    {filesToUpload.length} Documents Selected
+                                                </p>
+                                                <ul className="space-y-2">
+                                                    {filesToUpload.map((f, i) => (
+                                                        <li key={i} className="font-mono text-sm text-white truncate flex items-center gap-2">
+                                                            <FileText size={14} className="text-slate-500 shrink-0" />
+                                                            {f.name}
+                                                        </li>
+                                                    ))}
+                                                </ul>
                                             </div>
 
                                             <div className="flex gap-2 text-sm text-slate-300">
-                                                <AlertCircle size={16} className="text-blue-400 mt-0.5" />
-                                                <p>This document will be indexed and immediately available for the Chatbot to use.</p>
+                                                <AlertCircle size={16} className="text-blue-400 mt-0.5 shrink-0" />
+                                                <p>These documents will be indexed and immediately available for the Chatbot.</p>
                                             </div>
                                         </div>
 
@@ -880,7 +975,7 @@ export default function AdminPage() {
                                                 onClick={() => {
                                                     if (!processing) {
                                                         setShowUploadModal(false);
-                                                        setFileToUpload(null);
+                                                        setFilesToUpload([]);
                                                     }
                                                 }}
                                                 disabled={processing}
@@ -896,10 +991,10 @@ export default function AdminPage() {
                                                 {processing ? (
                                                     <>
                                                         <Loader2 size={18} className="animate-spin" />
-                                                        Uploading...
+                                                        {uploadProgress.current}/{uploadProgress.total}
                                                     </>
                                                 ) : (
-                                                    "Yes, Upload"
+                                                    "Yes, Upload All"
                                                 )}
                                             </button>
                                         </div>
@@ -912,10 +1007,11 @@ export default function AdminPage() {
                                 <input
                                     type="file"
                                     accept=".pdf"
+                                    multiple
                                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                                     onChange={(e) => {
-                                        if (e.target.files?.[0]) {
-                                            setFileToUpload(e.target.files[0]);
+                                        if (e.target.files && e.target.files.length > 0) {
+                                            setFilesToUpload(Array.from(e.target.files));
                                             setShowUploadModal(true);
                                             e.target.value = ''; // Reset
                                         }
@@ -926,16 +1022,16 @@ export default function AdminPage() {
                                         <Upload size={32} />
                                     </div>
                                     <div>
-                                        <h3 className="text-xl font-bold text-white">Upload New Document</h3>
-                                        <p className="text-slate-400 mt-2">Drag and drop your PDF here, or click to browse.</p>
+                                        <h3 className="text-xl font-bold text-white">Upload New Documents</h3>
+                                        <p className="text-slate-400 mt-2">Drag and drop your PDFs here, or click to browse.</p>
                                     </div>
-                                    <span className="px-3 py-1 bg-slate-700 text-xs text-slate-300 rounded-full">PDF Only</span>
+                                    <span className="px-3 py-1 bg-slate-700 text-xs text-slate-300 rounded-full">PDF Only • Batch Upload Support</span>
                                 </div>
                             </div>
 
                             {/* DOCUMENT LIST */}
-                            <div className="bg-slate-800/50 border border-slate-700 rounded-3xl backdrop-blur-xl overflow-hidden">
-                                <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+                            <div className="bg-slate-800/50 border border-slate-700 rounded-3xl backdrop-blur-xl mb-8">
+                                <div className="p-6 border-b border-slate-700 flex justify-between items-center shrink-0">
                                     <h3 className="font-bold text-lg flex items-center gap-2">
                                         <Database size={20} className="text-blue-400" />
                                         Indexed Documents
@@ -943,59 +1039,61 @@ export default function AdminPage() {
                                     <span className="text-xs text-slate-500">{documents.length} Documents</span>
                                 </div>
 
-                                {documents.length === 0 ? (
-                                    <div className="p-12 text-center text-slate-500">
-                                        <File size={48} className="mx-auto mb-4 opacity-50" />
-                                        <p>No documents indexed yet.</p>
-                                        <p className="text-sm mt-1">Upload a PDF to get started.</p>
-                                    </div>
-                                ) : (
-                                    <table className="w-full text-left">
-                                        <thead className="bg-slate-900/50 text-slate-400 text-xs uppercase">
-                                            <tr>
-                                                <th className="px-6 py-4">Status</th>
-                                                <th className="px-6 py-4">Filename</th>
-                                                <th className="px-6 py-4">Chunks</th>
-                                                <th className="px-6 py-4">Date</th>
-                                                <th className="px-6 py-4">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-700 text-sm md:text-base">
-                                            {documents.map((doc: any) => (
-                                                <tr key={doc.id} className="hover:bg-white/5 transition-colors">
-                                                    <td className="px-6 py-4">
-                                                        {doc.status === 'READY' ? (
-                                                            <span className="bg-green-500/20 text-green-400 px-2 py-1 rounded-md text-xs font-bold border border-green-500/30">READY</span>
-                                                        ) : doc.status === 'INDEXING' ? (
-                                                            <span className="bg-blue-500/20 text-blue-400 px-2 py-1 rounded-md text-xs font-bold border border-blue-500/30 animate-pulse">INDEXING...</span>
-                                                        ) : (
-                                                            <span className="bg-red-500/20 text-red-400 px-2 py-1 rounded-md text-xs font-bold border border-red-500/30">ERROR</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-6 py-4 font-medium text-white flex items-center gap-2">
-                                                        <FileText size={16} className="text-slate-400" />
-                                                        {doc.filename}
-                                                    </td>
-                                                    <td className="px-6 py-4 text-slate-300">
-                                                        {doc.chunk_count} Chunks
-                                                    </td>
-                                                    <td className="px-6 py-4 text-slate-400 text-xs">
-                                                        {new Date(doc.upload_date).toLocaleDateString()}
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <button
-                                                            onClick={() => deleteDocument(doc.id, doc.filename)}
-                                                            className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
-                                                            title="Delete Document"
-                                                        >
-                                                            <Trash2 size={18} />
-                                                        </button>
-                                                    </td>
+                                <div>
+                                    {documents.length === 0 ? (
+                                        <div className="p-12 text-center text-slate-500">
+                                            <File size={48} className="mx-auto mb-4 opacity-50" />
+                                            <p>No documents indexed yet.</p>
+                                            <p className="text-sm mt-1">Upload a PDF to get started.</p>
+                                        </div>
+                                    ) : (
+                                        <table className="w-full text-left">
+                                            <thead className="bg-slate-900/50 text-slate-400 text-xs uppercase">
+                                                <tr>
+                                                    <th className="px-6 py-4">Status</th>
+                                                    <th className="px-6 py-4">Filename</th>
+                                                    <th className="px-6 py-4">Chunks</th>
+                                                    <th className="px-6 py-4">Date</th>
+                                                    <th className="px-6 py-4">Actions</th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                )}
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-700 text-sm md:text-base">
+                                                {documents.map((doc: any) => (
+                                                    <tr key={doc.id} className="hover:bg-white/5 transition-colors">
+                                                        <td className="px-6 py-4">
+                                                            {doc.status === 'READY' ? (
+                                                                <span className="bg-green-500/20 text-green-400 px-2 py-1 rounded-md text-xs font-bold border border-green-500/30">READY</span>
+                                                            ) : doc.status === 'INDEXING' ? (
+                                                                <span className="bg-blue-500/20 text-blue-400 px-2 py-1 rounded-md text-xs font-bold border border-blue-500/30 animate-pulse">INDEXING...</span>
+                                                            ) : (
+                                                                <span className="bg-red-500/20 text-red-400 px-2 py-1 rounded-md text-xs font-bold border border-red-500/30">ERROR</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-6 py-4 font-medium text-white flex items-center gap-2">
+                                                            <FileText size={16} className="text-slate-400" />
+                                                            {doc.filename}
+                                                        </td>
+                                                        <td className="px-6 py-4 text-slate-300">
+                                                            {doc.chunk_count} Chunks
+                                                        </td>
+                                                        <td className="px-6 py-4 text-slate-400 text-xs">
+                                                            {new Date(doc.upload_date).toLocaleDateString()}
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <button
+                                                                onClick={() => deleteDocument(doc.id, doc.filename)}
+                                                                className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
+                                                                title="Delete Document"
+                                                            >
+                                                                <Trash2 size={18} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}

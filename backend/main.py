@@ -27,6 +27,7 @@ app.add_middleware(
 class AdminMessage(BaseModel):
     session_id: str
     message: str
+    agent_name: str = "Support Agent"
 
 class AdminLogin(BaseModel):
     email: str
@@ -110,15 +111,30 @@ def poll_updates(session_id: str = Body(..., embed=True)):
     if not session_ended and is_session_ended(session_id):
         session_ended = True
 
+    
+    agent_name = None
+    if is_active_agent and session_id in sessions:
+        agent_name = sessions[session_id]["data"].get("agent_name")
+
     if messages:
         mark_messages_read(session_id)
         return {
             "has_new": True, 
             "messages": [{"text": m.content, "sender": m.sender, "timestamp": m.timestamp} for m in messages],
             "active_agent": is_active_agent,
+            "agent_name": agent_name,
             "session_ended": session_ended
         }
-    return {"has_new": False, "messages": [], "active_agent": is_active_agent, "session_ended": session_ended}
+    return {"has_new": False, "messages": [], "active_agent": is_active_agent, "agent_name": agent_name, "session_ended": session_ended}
+
+@app.post("/chat/end")
+def end_user_session(session_id: str = Body(..., embed=True)):
+    """User manually ends their session"""
+    from agent_logic import end_session as logic_end_session
+    logic_end_session(session_id)
+    # Save system message
+    save_message(session_id, "ai", "Session ended by user.", read_by_user=True)
+    return {"status": "ended", "session_id": session_id}
 
 @app.get("/users")
 def get_users():
@@ -286,6 +302,13 @@ def get_chat(session_id: str):
 @app.post("/admin/reply")
 def admin_reply(req: AdminMessage):
     """Admin sends a message to a user"""
+    # Store agent name in session for the frontend
+    sessions = get_all_sessions()
+    if req.session_id in sessions:
+        sessions[req.session_id]["data"]["agent_name"] = req.agent_name
+        # Force state to HUMAN_TAKEOVER so frontend shows the agent UI
+        sessions[req.session_id]["state"] = "HUMAN_TAKEOVER"
+        
     save_message(req.session_id, "admin", req.message)
     return {"status": "sent"}
 
