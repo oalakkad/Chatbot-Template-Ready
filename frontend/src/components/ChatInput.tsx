@@ -10,8 +10,7 @@ interface ChatInputProps {
 const ChatInput: React.FC<ChatInputProps> = ({ onSend, onVoiceSend, disabled }) => {
     const [input, setInput] = useState('');
     const [isRecording, setIsRecording] = useState(false);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioChunksRef = useRef<Blob[]>([]);
+    const recognitionRef = useRef<any>(null);
 
     const handleSend = () => {
         if (input.trim() && !disabled) {
@@ -26,37 +25,53 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSend, onVoiceSend, disabled }) 
         }
     };
 
-    const startRecording = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mediaRecorder = new MediaRecorder(stream);
-            mediaRecorderRef.current = mediaRecorder;
-            audioChunksRef.current = [];
-
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    audioChunksRef.current.push(event.data);
-                }
-            };
-
-            mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-                if (onVoiceSend) onVoiceSend(audioBlob);
-                stream.getTracks().forEach(track => track.stop());
-            };
-
-            mediaRecorder.start();
-            setIsRecording(true);
-        } catch (err) {
-            console.error("Error accessing microphone:", err);
-            alert("Could not access microphone. Please check permissions.");
+    const startRecording = () => {
+        if (!('webkitSpeechRecognition' in window) && !('speechRecognition' in window)) {
+            alert("Your browser does not support voice recognition. Please use Chrome or Edge.");
+            return;
         }
+
+        const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).speechRecognition;
+        const recognition = new SpeechRecognition();
+
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US'; // Default, but it detects Arabic well too
+
+        recognition.onstart = () => {
+            setIsRecording(true);
+            console.log("[SPEECH] Recognition started");
+        };
+
+        recognition.onresult = (event: any) => {
+            let interimTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    setInput(prev => prev + event.results[i][0].transcript);
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
+                }
+            }
+            console.log("[SPEECH] Interim:", interimTranscript);
+        };
+
+        recognition.onerror = (event: any) => {
+            console.error("[SPEECH] Error:", event.error);
+            setIsRecording(false);
+        };
+
+        recognition.onend = () => {
+            setIsRecording(false);
+            console.log("[SPEECH] Recognition ended");
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
     };
 
     const stopRecording = () => {
-        if (mediaRecorderRef.current && isRecording) {
-            mediaRecorderRef.current.stop();
-            setIsRecording(false);
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
         }
     };
 

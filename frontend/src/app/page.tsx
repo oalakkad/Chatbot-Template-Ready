@@ -14,10 +14,10 @@ export default function Home() {
           </div>
         </div>
         <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl mb-6">
-          AL-TIJARIA Employee Portal
+          Al-tijaria Security Information Help Desk
         </h1>
         <p className="text-lg leading-8 text-slate-400 mb-10">
-          Welcome to the AL-TIJARIA dashboard. Access your resources, apply for leave, or view policies via the Help Desk.
+          Welcome to the official security support portal. Use the chatbot below for instant assistance with security protocols and information.
         </p>
         <div className="flex gap-4 justify-center">
           <button className="px-6 py-3 bg-white/5 border border-white/10 rounded-lg text-slate-200 hover:bg-white/10 font-medium transition-all hover:border-white/20">

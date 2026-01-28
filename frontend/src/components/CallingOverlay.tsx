@@ -12,6 +12,7 @@ interface CallingOverlayProps {
     isProcessing?: boolean;
     isMuted: boolean;
     agentName: string;
+    transcription?: string; // For debugging
 }
 
 const CallingOverlay: React.FC<CallingOverlayProps> = ({
@@ -23,8 +24,20 @@ const CallingOverlay: React.FC<CallingOverlayProps> = ({
     isSpeaking,
     isProcessing,
     isMuted,
-    agentName
+    agentName,
+    transcription
 }) => {
+    // Waveform simulation
+    const [waveformData, setWaveformData] = React.useState([0.2, 0.4, 0.3, 0.5, 0.2]);
+
+    React.useEffect(() => {
+        if (!isListening) return;
+        const interval = setInterval(() => {
+            setWaveformData(prev => prev.map(() => Math.random() * 0.8 + 0.1));
+        }, 150);
+        return () => clearInterval(interval);
+    }, [isListening]);
+
     return (
         <AnimatePresence>
             {isOpen && (
@@ -35,15 +48,42 @@ const CallingOverlay: React.FC<CallingOverlayProps> = ({
                     className="absolute inset-0 z-[60] bg-slate-900 flex flex-col items-center justify-between p-8 text-white"
                 >
                     {/* Header */}
-                    <div className="text-center mt-8">
-                        <div className="text-blue-400 text-xs uppercase tracking-widest mb-2 font-bold">Encrypted AI Call</div>
+                    <div className="text-center mt-8 w-full max-w-md">
+                        <div className="text-blue-400 text-xs uppercase tracking-widest mb-2 font-bold opacity-80">Encrypted AI Call</div>
                         <h2 className="text-2xl font-bold">{agentName}</h2>
-                        <div className="flex items-center justify-center gap-2 mt-2">
-                            <span className={`w-2 h-2 rounded-full ${isProcessing ? 'bg-amber-500' : 'bg-blue-500'} animate-pulse`} />
-                            <span className="text-slate-400 text-sm">
-                                {isSpeaking ? 'Speaking...' : isProcessing ? 'Processing...' : isListening ? 'Listening...' : 'Connected'}
+
+                        {/* Status Label */}
+                        <div className="flex items-center justify-center gap-2 mt-4">
+                            <span className={`w-2 h-2 rounded-full ${isProcessing ? 'bg-amber-500' : isListening ? 'bg-green-500' : 'bg-blue-500'} ${(isProcessing || isListening) ? 'animate-pulse' : ''}`} />
+                            <span className="text-slate-400 text-sm font-medium">
+                                {isSpeaking ? 'AI Speaking...' : isProcessing ? 'AI Processing Voice...' : isListening ? 'I am listening to you...' : 'Connection Ready'}
                             </span>
                         </div>
+
+                        {/* Visualizer Waveform */}
+                        <div className="h-12 flex items-center justify-center gap-1 mt-6">
+                            {waveformData.map((val, i) => (
+                                <motion.div
+                                    key={i}
+                                    animate={{ height: isListening ? val * 48 : 4 }}
+                                    className={`w-1.5 rounded-full ${isListening ? 'bg-blue-400' : 'bg-slate-700'} transition-all`}
+                                    style={{ opacity: 0.5 + (0.1 * i) }}
+                                />
+                            ))}
+                        </div>
+
+                        {/* Transcription Preview (Debug Hint) */}
+                        <AnimatePresence>
+                            {transcription && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="mt-6 p-4 bg-slate-800/50 rounded-xl border border-white/5 text-slate-300 text-sm italic"
+                                >
+                                    " {transcription} "
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
 
                     {/* Visualizer / Avatar */}

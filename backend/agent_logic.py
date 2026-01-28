@@ -6,7 +6,17 @@ from database import get_kuwait_time
 # session_id -> { "state": "...", "data": {...} }
 SESSIONS = {}
 
-async def handle_user_message(request: ChatRequest) -> ChatResponse:
+def is_handoff_requested(msg: str) -> bool:
+    """Centralized keyword detection for human agent handoff."""
+    m = msg.lower()
+    keywords = [
+        "agent", "human", "representative", "real person", 
+        "support assistant", "live desk", "help desk", "support",
+        "talk to", "speak with"
+    ]
+    return any(kw in m for kw in keywords)
+
+async def handle_user_message(request: ChatRequest, voice_mode: bool = False) -> ChatResponse:
     session_id = request.session_id
     msg = request.message.strip()
     
@@ -34,9 +44,9 @@ async def handle_user_message(request: ChatRequest) -> ChatResponse:
         state = "INIT"
     
     # Global: Check for Human Takeover
-    if ("talk" in msg.lower() and "agent" in msg.lower()) or "support" in msg.lower() or "help desk" in msg.lower():
+    if is_handoff_requested(msg):
         session["state"] = "HUMAN_TAKEOVER"
-        response_text = "I've notified the help desk team. A human representative will be with you shortly."
+        response_text = "OK, I'm connecting you to a human agent now. Please wait a moment while I alert the support team."
         save_message(session_id, "ai", response_text, read_by_user=True)
         return ChatResponse(response=response_text, state="HUMAN_TAKEOVER", action="takeover", timestamp=get_kuwait_time())
     
@@ -59,7 +69,7 @@ async def handle_user_message(request: ChatRequest) -> ChatResponse:
 
     if state == "INIT":
         next_state = "AWAIT_PHONE"
-        response_text = "Welcome to the AL-TIJARIA Support Portal! 👋\n\nFor your security, could you please verify your identity by entering your registered phone number?"
+        response_text = "Welcome to the Al-tijaria Security Information Help Desk. To proceed with your request, please verify your identity by entering your registered phone number."
     
     elif state == "AWAIT_PHONE":
         # Lenient parsing for voice/messy input: extract only digits
@@ -82,13 +92,13 @@ async def handle_user_message(request: ChatRequest) -> ChatResponse:
             else:
                 session["data"]["reg_phone"] = msg
                 next_state = "REG_AWAIT_NAME"
-                response_text = "Number not recognized.\n\nInitiating Account Creation Protocol.\n\nPlease enter your Full Name:"
+                response_text = "The provided phone number is not recognized. Initiating new account registration. Please enter your full name to begin."
 
     # --- LOGIN FLOW ---
     elif state == "AWAIT_EMAIL":
         session["data"]["input_email"] = msg
         next_state = "AWAIT_PASSWORD"
-        response_text = "Thanks! Now, please enter your password to log in."
+        response_text = "Identity found. Please enter your password to proceed with authentication."
 
     elif state == "AWAIT_PASSWORD":
         password_input = msg.strip()
@@ -211,7 +221,7 @@ async def handle_user_message(request: ChatRequest) -> ChatResponse:
             response_text = answer
             next_state = "AUTHENTICATED"
         else:
-            response_text = "I've searched our knowledge base but couldn't find a definitive answer for you. Would you like to speak with a human agent or have me open a support ticket for you?"
+            response_text = "I was unable to find specific information regarding your request in our knowledge base. Would you like to be connected to a human agent, or should I log a support ticket for further investigation?"
             next_state = "AUTHENTICATED"
     
     else:
@@ -257,6 +267,13 @@ async def handle_user_message_stream(request: ChatRequest):
     
     session = SESSIONS[session_id]
     state = session["state"]
+
+    # --- GLOBAL HANDOFF CHECK (Streaming) ---
+    if is_handoff_requested(msg):
+        # Delegate to standard non-streaming handler for consistent state transition
+        resp = await handle_user_message(request)
+        yield resp.response
+        return
 
     # --- FOR STREAMING, WE PRIMARILY CARE ABOUT AUTHENTICATED Q&A ---
     if state == "AUTHENTICATED":

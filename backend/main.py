@@ -76,26 +76,49 @@ async def chat_voice_endpoint(
     audio: UploadFile = File(...)
 ):
     try:
-        # 1. Transcribe
-        audio_content = await audio.read()
-        audio_stream = io.BytesIO(audio_content)
-        transcription = await transcribe_audio(audio_stream)
+        # Browser handles transcription now, this endpoint is legacy
+        return models.VoiceResponse(
+            transcription="[TRANSCRIPTION_MOVED_TO_BROWSER]",
+            response_text="Voice processing has been moved to your browser for faster performance.",
+            audio_base64=None,
+            state="READY",
+            timestamp=get_kuwait_time()
+        )
         
         if not transcription:
-             raise HTTPException(status_code=400, detail="Could not transcribe audio")
+             print("[VOICE_DEBUG] Transcription FAILED or returned EMPTY. Check microphone or audio format.")
+             raise HTTPException(status_code=400, detail="Microphone audio could not be heard or transcribed.")
+        
+        print(f"[VOICE_DEBUG] Transcribed: '{transcription}'")
              
-        # 2. Get AI Response text using the existing handle_user_message logic
+        # 2. Get AI Response text using the existing handle_user_message logic (Voice Mode Enabled for Brevity)
         chat_req = ChatRequest(session_id=session_id, message=transcription)
-        ai_resp = await handle_user_message(chat_req)
+        ai_resp = await handle_user_message(chat_req, voice_mode=True)
+        
+        print(f"[VOICE_DEBUG] AI Response captured. Length: {len(ai_resp.response)}")
         
         # 3. Generate TTS for AI Response (Cleaned for voice naturalness)
         import re
-        # Remove [Source | Page] citations for voice only
-        clean_voice_text = re.sub(r'\[.*?\|.*?\]', '', ai_resp.response)
-        # Remove extra asterisks/markdown that sound weird in voice
-        clean_voice_text = clean_voice_text.replace("**", "").replace("#", "")
         
+        # Strip the references section for voice (Matches both old '---' and new '### 📂')
+        voice_raw = ai_resp.response
+        if "### 📂" in voice_raw:
+            voice_raw = voice_raw.split("### 📂")[0]
+        elif "---" in voice_raw:
+            voice_raw = voice_raw.split("---")[0]
+            
+        voice_raw = voice_raw.strip()
+        
+        # Remove markdown artifacts and extra symbols
+        clean_voice_text = re.sub(r'\[.*?\|.*?\]', '', voice_raw) # Citations
+        clean_voice_text = clean_voice_text.replace("**", "").replace("#", "")
+        clean_voice_text = clean_voice_text.replace("- ", " ") # Bullet point markings
+        clean_voice_text = clean_voice_text.strip()
+        
+        print(f"[VOICE_DEBUG] Generating speech for: '{clean_voice_text[:50]}...'")
         voice_data = await generate_speech(clean_voice_text)
+        print(f"[VOICE_DEBUG] Speech generated. Size: {len(voice_data)} bytes")
+        
         voice_b64 = base64.b64encode(voice_data).decode("utf-8") if voice_data else None
         
         from database import get_kuwait_time
@@ -108,8 +131,9 @@ async def chat_voice_endpoint(
         )
     except Exception as e:
         import traceback
+        print(f"[VOICE_FATAL_ERROR] {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Voice sync error: {str(e)}")
 
 @app.post("/chat/poll")
 def poll_updates(session_id: str = Body(..., embed=True)):

@@ -133,6 +133,24 @@ export default function ChatWidget() {
 
         setIsLoading(true);
 
+        if (isAgentActive) {
+            try {
+                await fetch('http://127.0.0.1:8000/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionIdRef.current,
+                        message: text,
+                    }),
+                });
+            } catch (error) {
+                console.error('Agent message error:', error);
+            } finally {
+                setIsLoading(false);
+            }
+            return;
+        }
+
         // Prepare bot message placeholder
         const botMessageId = uuidv4();
         let fullBotText = "";
@@ -149,10 +167,12 @@ export default function ChatWidget() {
 
             if (!response.ok) throw new Error('Stream request failed');
 
-            // Handle non-streaming fallback or error from server
-            if (!response.body) throw new Error('No response body');
+            // 1. Check if the response switched to takeover mode immediately
+            // (Standard stream doesn't return JSON unless it's an error, 
+            // but our backend yields the takeover response as the first chunk)
 
-            const reader = response.body.getReader();
+            const reader = response.body?.getReader();
+            if (!reader) throw new Error('No response body');
             const decoder = new TextDecoder();
 
             // Add initial empty bot message with streaming flag
@@ -182,6 +202,11 @@ export default function ChatWidget() {
                 m.id === botMessageId ? { ...m, isStreaming: false, wasStreamed: true } : m
             ));
 
+            // Instant fallback: If the message looks like a takeover, set isAgentActive immediately
+            if (fullBotText.toLowerCase().includes("connecting you to a human")) {
+                setIsAgentActive(true);
+            }
+
         } catch (error) {
             console.error('Streaming Error:', error);
             // Fallback for errors
@@ -197,9 +222,38 @@ export default function ChatWidget() {
         setIsLoading(true);
         if (isCalling) setIsListening(false);
 
+        const userMsgId = uuidv4();
+        const botMsgId = uuidv4();
+
+        // 1. Add User Message placeholder immediately
+        setMessages(prev => [
+            ...prev,
+            {
+                id: userMsgId,
+                text: "🎤 Processing Voice Note...",
+                sender: 'user',
+                timestamp: new Date()
+            }
+        ]);
+
+        // Only add AI placeholder if NO agent is active
+        if (!isAgentActive) {
+            setMessages(prev => [
+                ...prev,
+                {
+                    id: botMsgId,
+                    text: "",
+                    sender: 'ai',
+                    timestamp: new Date(),
+                    isStreaming: true
+                }
+            ]);
+        }
+
         const formData = new FormData();
+        const extension = audioBlob.type.includes('webm') ? 'webm' : audioBlob.type.includes('ogg') ? 'ogg' : 'wav';
+        formData.append('audio', audioBlob, `voice_note.${extension}`);
         formData.append('session_id', sessionIdRef.current);
-        formData.append('audio', audioBlob, 'voice_note.wav');
 
         try {
             const res = await fetch('http://127.0.0.1:8000/chat/voice', {
@@ -207,27 +261,37 @@ export default function ChatWidget() {
                 body: formData,
             });
 
-            if (!res.ok) throw new Error('Voice sync error');
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }));
+                console.error("[VOICE_FATAL_ERROR] Backend returned error:", errorData);
+                throw new Error(`Voice sync error: ${errorData.detail || 'Connection failed'}`);
+            }
 
             const data = await res.json();
 
-            // Add user message to UI
-            const userMsg: Message = {
-                id: uuidv4(),
-                text: data.transcription,
-                sender: 'user',
-                timestamp: new Date()
-            };
-            setMessages(prev => [...prev, userMsg]);
+            // 2. Resolve placeholders with real data
+            if (data.transcription) {
+                setLastTranscription(data.transcription);
+                // Clear after 8 seconds
+                setTimeout(() => setLastTranscription(""), 8000);
+            }
 
-            // Add AI message to UI
-            const botMsg: Message = {
-                id: uuidv4(),
-                text: data.response_text,
-                sender: 'ai',
-                timestamp: data.timestamp ? new Date(data.timestamp) : new Date()
-            };
-            setMessages(prev => [...prev, botMsg]);
+            setMessages(prev => prev.map(m => {
+                if (m.id === userMsgId) return { ...m, text: data.transcription };
+                if (m.id === botMsgId) return {
+                    ...m,
+                    text: data.response_text,
+                    isStreaming: false,
+                    wasStreamed: true,
+                    timestamp: data.timestamp ? new Date(data.timestamp) : new Date()
+                };
+                return m;
+            }));
+
+            // Sync agent state immediately if response indicates takeover
+            if (data.state === 'HUMAN_TAKEOVER') {
+                setIsAgentActive(true);
+            }
 
             // Play AI Voice
             if (data.audio_base64 && !isMuted) {
@@ -244,6 +308,12 @@ export default function ChatWidget() {
             }
         } catch (error) {
             console.error('Voice Error:', error);
+            // Fallback for errors
+            setMessages(prev => prev.map(m => {
+                if (m.id === userMsgId) return { ...m, text: "🎤 (Voice processing failed)" };
+                if (m.id === botMsgId) return { ...m, text: "I'm sorry, I couldn't process that voice note. Please try again.", isStreaming: false };
+                return m;
+            }));
         } finally {
             setIsLoading(false);
         }
@@ -273,8 +343,8 @@ export default function ChatWidget() {
                 };
 
                 mediaRecorder.onstop = () => {
-                    console.log("[CALL] Recording stopped, processing audio...");
-                    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+                    console.log("[CALL] Recording stopped, processing audio. Type:", mediaRecorder.mimeType);
+                    const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType });
                     console.log("[CALL] Audio blob created:", audioBlob.size, "bytes");
                     handleVoiceSend(audioBlob);
                     stream.getTracks().forEach(track => track.stop());
@@ -327,6 +397,8 @@ export default function ChatWidget() {
         }
     };
 
+    const [lastTranscription, setLastTranscription] = useState<string>("");
+
     return (
         <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4 font-sans antialiased">
             <AnimatePresence>
@@ -335,7 +407,7 @@ export default function ChatWidget() {
                         initial={{ opacity: 0, scale: 0.9, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                        className="w-[380px] h-[600px] bg-slate-900 rounded-2xl shadow-2xl shadow-blue-900/20 overflow-hidden border border-slate-700 flex flex-col"
+                        className="w-[480px] h-[600px] bg-slate-900 rounded-2xl shadow-2xl shadow-blue-900/20 overflow-hidden border border-slate-700 flex flex-col"
                     >
                         {/* Header */}
                         <div className={`p-4 flex items-center justify-between shrink-0 transition-colors duration-500 ${isAgentActive ? 'bg-gradient-to-r from-purple-900 to-indigo-900' : 'bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900'} border-b border-white/5`}>
@@ -417,6 +489,7 @@ export default function ChatWidget() {
                                 setIsListening(false);
                                 setIsSpeaking(false);
                                 setIsMuted(false); // Reset mute on hangup
+                                setLastTranscription(""); // Clear debug info
                             }}
                             onToggleListening={toggleCallListening}
                             onToggleMute={() => setIsMuted(!isMuted)}
@@ -425,6 +498,7 @@ export default function ChatWidget() {
                             isProcessing={isLoading}
                             isMuted={isMuted}
                             agentName={isAgentActive ? "Support Agent" : "Help Desk AI"}
+                            transcription={lastTranscription}
                         />
 
                         {/* Chat Area */}

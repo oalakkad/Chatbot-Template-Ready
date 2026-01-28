@@ -70,12 +70,15 @@ body {
     border-radius: 12px;
     overflow: hidden;
     background: rgba(15, 23, 42, 0.5);
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
 }
 
 .prose th {
     background: rgba(30, 41, 59, 0.8);
     color: #38bdf8;
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 0.75rem;
     text-align: left;
     font-size: 0.85rem;
     font-weight: 600;
@@ -84,7 +87,7 @@ body {
 }
 
 .prose td {
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 0.75rem;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
     font-size: 0.9rem;
 }

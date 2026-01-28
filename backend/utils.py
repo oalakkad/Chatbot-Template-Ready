@@ -132,20 +132,20 @@ def get_active_sessions():
 
 from knowledge_base import search_pinecone, generate_answer_stream
 
-async def search_knowledge_base(query: str, history: list = None):
+async def search_knowledge_base(query: str, history: list = None, voice_mode: bool = False):
     # Backward compatibility: Join the stream into a single string
     full_answer = ""
-    async for chunk in search_knowledge_base_stream(query, history):
+    async for chunk in search_knowledge_base_stream(query, history, voice_mode=voice_mode):
         full_answer += chunk
     return full_answer
 
-async def search_knowledge_base_stream(query: str, history: list = None):
-    # 1. Retrieve Context from Pinecone (Async & Parallel)
-    context = await search_pinecone(query)
+async def search_knowledge_base_stream(query: str, history: list = None, voice_mode: bool = False):
+    # 1. Retrieve Context from Pinecone (Async & Parallel) - Now aware of history for follow-ups
+    context = await search_pinecone(query, history=history)
     
     # 2. Yield chunks from the generator
     if context:
-        async for chunk in generate_answer_stream(query, context, history=history):
+        async for chunk in generate_answer_stream(query, context, history=history, voice_mode=voice_mode):
             yield chunk
         return
 

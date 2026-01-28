@@ -51,7 +51,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLatest, isAgentAct
             )}
 
             <div
-                className={`max-w-[85%] px-5 py-3.5 rounded-2xl backdrop-blur-md ${isUser
+                className={`${isUser ? 'max-w-[85%]' : 'max-w-[95%]'} px-5 py-3.5 rounded-2xl backdrop-blur-md ${isUser
                     ? 'bg-gradient-to-tr from-sky-500 to-blue-600 text-white rounded-br-none shadow-lg shadow-sky-500/20'
                     : 'bg-slate-900/95 text-slate-100 rounded-bl-none shadow-2xl border border-blue-500/20'
                     }`}
