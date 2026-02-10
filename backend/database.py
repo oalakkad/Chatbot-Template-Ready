@@ -1,8 +1,15 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# MySQL database (XAMPP default: user=root, password="", host=localhost, port=3306)
-DATABASE_URL = "mysql+pymysql://root:@localhost:3306/helpdesk_ai"
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Database URL can be overridden by environment variable for Docker support
+# Default: MySQL (XAMPP/Local)
+mysql_url = "mysql+pymysql://root:@localhost:3306/helpdesk_ai"
+DATABASE_URL = os.getenv("DATABASE_URL", mysql_url)
 
 # SQLite database for local dev reliability
 # DATABASE_URL = "sqlite:///./helpdesk.db"
